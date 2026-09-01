@@ -6,8 +6,29 @@ single project so the skills can be reused across different workspaces.
 ## Structure
 
 - `prd-review-loop/`: A structured author-reviewer loop for PRD iteration.
+- `github-for-share/`: Import a static site into `iambean/for-share` as its own directory and list Pages URLs.
 
 ## Skill Summary
+
+### `github-for-share`
+
+Use this skill to publish a folder of static HTML/CSS/JS to
+[`iambean/for-share`](https://github.com/iambean/for-share). Each package lives in its
+own top-level directory. Pages URL:
+
+`https://iambean.github.io/for-share/<slug>/`
+
+- `mode=import`: create the repo if needed, copy `--src` into `--slug/`, enable Pages.
+- `mode=list`: print existing share pages and URLs.
+
+```text
+使用 skill: github-for-share
+mode=import
+--src /absolute/path/to/out
+--slug mac-icloud-overlay
+```
+
+Needs a GitHub token with `repo` and `workflow` (`GITHUB_TOKEN` / `GH_TOKEN`, or `gh auth login`).
 
 ### `prd-review-loop`
 
