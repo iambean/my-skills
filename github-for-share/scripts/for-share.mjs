@@ -2,7 +2,8 @@
 /**
  * Publish or list static share pages on iambean/for-share (GitHub Pages).
  *
- *   node for-share.mjs import --src ./out --slug mac-icloud-overlay --title "标题"
+ *   node for-share.mjs import --src ./out --slug jijian-linmo --title "标题"
+ *   → 顶层目录 2026-09-01-jijian-linmo/
  *   node for-share.mjs list
  *   node for-share.mjs enable-pages
  */
@@ -39,6 +40,31 @@ const TEXT_EXT = new Set([
   ".map",
   ".webmanifest",
 ]);
+
+const DATE_SLUG_PREFIX = /^(\d{4}-\d{2}-\d{2})-/;
+
+function todayStamp() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function sanitizeSlug(raw) {
+  return String(raw || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/** One top-level folder: 2026-09-01-my-page. Do not nest extra directories. */
+function datedSlug(raw) {
+  const cleaned = sanitizeSlug(raw) || "share";
+  if (DATE_SLUG_PREFIX.test(cleaned)) return cleaned;
+  return `${todayStamp()}-${cleaned}`;
+}
+
+function undatedSlug(slug) {
+  return sanitizeSlug(slug).replace(DATE_SLUG_PREFIX, "");
+}
 
 function parseArgs(argv) {
   const args = { _: [] };
@@ -531,14 +557,12 @@ async function cmdImport({ owner, repo, token, src, slug, title, description }) 
   if (!src || !existsSync(src) || !existsSync(path.join(src, "index.html"))) {
     throw new Error(`--src 必须是含 index.html 的静态目录，收到：${src || "(空)"}`);
   }
-  const packageSlug =
+  const requested =
     slug ||
-    path
-      .basename(path.resolve(src))
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, "-")
-      .replace(/^-|-$/g, "") ||
+    path.basename(path.resolve(src)) ||
     "share";
+  const packageSlug = datedSlug(requested);
+  const previousSlug = undatedSlug(packageSlug);
 
   await ensureRepo(token, owner, repo);
   await ensurePublic(token, owner, repo);
@@ -562,6 +586,11 @@ async function cmdImport({ owner, repo, token, src, slug, title, description }) 
       });
     }
 
+    if (previousSlug && previousSlug !== packageSlug) {
+      const oldDir = path.join(tmp, previousSlug);
+      if (existsSync(oldDir)) rmSync(oldDir, { recursive: true, force: true });
+    }
+
     const destDir = path.join(tmp, packageSlug);
     rmSync(destDir, { recursive: true, force: true });
     copyDir(src, destDir);
@@ -570,11 +599,14 @@ async function cmdImport({ owner, repo, token, src, slug, title, description }) 
     const shares = readShares(tmp);
     const discovered = discoverPages(tmp);
     let pages = shares.pages.length ? shares.pages : discovered;
+    if (previousSlug && previousSlug !== packageSlug) {
+      pages = pages.filter((page) => page.slug !== previousSlug);
+    }
     pages = upsertPage(pages, {
       slug: packageSlug,
       title: title || packageSlug,
       description: description || "",
-      updated: new Date().toISOString().slice(0, 10),
+      updated: todayStamp(),
     });
     writeBootstrapFiles(tmp, owner, repo, pages);
     if (cloned) {
@@ -647,4 +679,4 @@ if (isMain) {
   });
 }
 
-export { catalogHtml, rewriteAssetPrefix };
+export { catalogHtml, datedSlug, rewriteAssetPrefix };

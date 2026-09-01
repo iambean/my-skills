@@ -5,9 +5,11 @@ description: 把纯静态网页一键导入 iambean/for-share 的独立目录并
 
 # github-for-share
 
-把**纯静态 Web 产出物**发布到 `iambean/for-share`。每个资源包占一个目录，GitHub Pages 地址为：
+把**纯静态 Web 产出物**发布到 `iambean/for-share`。每个资源包占仓库里的**一个顶层目录**（平铺，不要再套一层），GitHub Pages 地址为：
 
-`https://iambean.github.io/for-share/<slug>/`
+    `https://iambean.github.io/for-share/<YYYY-MM-DD>-<slug>/`
+
+例如 `https://iambean.github.io/for-share/2026-09-01-jijian-linmo/`。
 
 ## When to use
 
@@ -24,7 +26,7 @@ Run **exactly one** mode.
 ### `mode=import` — 一键导入
 
 1. 确认源目录里有 `index.html`（Next 静态导出通常是项目里的 `out/`）。
-2. 确定 `slug`（小写、数字、连字符）。若用户没给，从目录名生成。
+2. 确定 `slug`（小写、数字、连字符，**不要**自己加日期）。若用户没给，从目录名生成。脚本会自动加上当天日期前缀，变成一个顶层目录 `YYYY-MM-DD-slug/`，不增加目录层级。若传入的 slug 已经以 `YYYY-MM-DD-` 开头，则不再重复加日期。
 3. 需要 GitHub **写权限** token：`GITHUB_TOKEN` / `GH_TOKEN`，或已 `gh auth login`。
 4. 执行本 skill 自带脚本（把 `SKILL_DIR` 换成 skill 所在目录）：
 
@@ -32,16 +34,19 @@ Run **exactly one** mode.
 export GITHUB_TOKEN=...   # 若尚未登录 gh
 node "$SKILL_DIR/scripts/for-share.mjs" import \
   --src /absolute/path/to/static-dir \
-  --slug mac-icloud-overlay \
+  --slug jijian-linmo \
   --title "页面标题" \
   --description "一句话说明"
 ```
 
+实际目录和链接会是 `2026-09-01-jijian-linmo/`（日期以导入当天为准）。页面标题（`--title`）仍用人类可读文案，不必把日期写进标题。
+
 脚本会：
 
 - 仓库不存在时创建公开仓库 `iambean/for-share`
-- 把静态文件拷到独立目录 `<slug>/`（不覆盖其他包）
-- 把根路径资源改写成 `/for-share/<slug>/...`，以便项目 Pages 子路径能打开
+- 把静态文件拷到独立目录 `<YYYY-MM-DD>-<slug>/`（不覆盖其他包）
+- 若仓库里已有同名的无日期目录（例如先有 `jijian-linmo/`），导入日期版时删掉旧目录，避免两份并存
+- 把根路径资源改写成 `/for-share/<YYYY-MM-DD>-<slug>/...`，以便项目 Pages 子路径能打开
 - 更新根目录 `shares.json` 和目录页 `index.html`
 - 写入 `.github/workflows/pages.yml` 并尝试开启 GitHub Pages
 - 打印页面链接
@@ -56,7 +61,7 @@ node "$SKILL_DIR/scripts/for-share.mjs" list
 
 把结果整理成列表发给用户，每条包含标题和完整 URL：
 
-`https://iambean.github.io/for-share/<slug>/`
+`https://iambean.github.io/for-share/<YYYY-MM-DD>-<slug>/`
 
 没有 token 时脚本会读公开的 `shares.json`。
 
@@ -70,8 +75,8 @@ node "$SKILL_DIR/scripts/for-share.mjs" enable-pages
 
 ## Rules
 
-- 一个静态包 = 仓库里的一个顶层目录，不要把多个站点混进同一目录。
-- 不要删掉别人的 slug 目录，除非用户明确要求覆盖**同一个** slug。
+- 一个静态包 = 仓库里的一个顶层目录，目录名是 `YYYY-MM-DD-slug`，不要再往下套一层日期文件夹。
+- 不要删掉别人的 slug 目录，除非用户明确要求覆盖**同一个**页面（含把旧的无日期目录换成日期版）。
 - 默认 owner/repo 是 `iambean/for-share`。用户指定其他仓库时加 `--owner` `--repo`。
 - Token 不要写进仓库，不要在日志里打印 token。
 
