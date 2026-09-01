@@ -5,11 +5,16 @@ description: 把纯静态网页一键导入 iambean/for-share 的独立目录并
 
 # github-for-share
 
-把**纯静态 Web 产出物**发布到 `iambean/for-share`。每个资源包占仓库里的**一个顶层目录**（平铺，不要再套一层），GitHub Pages 地址为：
+把**纯静态 Web 产出物**发布到 `iambean/for-share`。每个资源包占仓库里的**一个顶层目录**（平铺，不要再套一层）。
 
-    `https://iambean.github.io/for-share/<YYYY-MM-DD>-<slug>/`
+## 标题与目录约束（必须遵守）
 
-例如 `https://iambean.github.io/for-share/2026-09-01-jijian-linmo/`。
+- 目录名 / slug：`YYYY-MM-DD-slug`（小写、数字、连字符）。例：`2026-09-01-jijian-linmo`
+- GitHub Pages：`https://iambean.github.io/for-share/YYYY-MM-DD-slug/`
+- **目录页主标题（卡片 h2）必须是带日期的 slug 加斜杠**，例如 `2026-09-01-jijian-linmo/`。不要把中文名放进标题位。
+- 中文名和说明只放在标题下面的 description。`--title` 若是人类可读文案，脚本会折进 description，**不会**当作目录主标题。
+- `shares.json` 的 `title` 字段也必须是 `YYYY-MM-DD-slug/`，与目录页 h2 一致。
+- 后续每一次 import / refresh 都按这个格式。已有无日期目录（如 `mac-icloud-overlay/`）在 refresh 或再次 import 时改成 `YYYY-MM-DD-mac-icloud-overlay/`。
 
 ## When to use
 
@@ -35,23 +40,28 @@ export GITHUB_TOKEN=...   # 若尚未登录 gh
 node "$SKILL_DIR/scripts/for-share.mjs" import \
   --src /absolute/path/to/static-dir \
   --slug jijian-linmo \
-  --title "页面标题" \
-  --description "一句话说明"
+  --title "击剑临摹" \
+  --description "给 7 岁孩子临摹的极简击剑线稿"
 ```
 
-实际目录和链接会是 `2026-09-01-jijian-linmo/`（日期以导入当天为准）。页面标题（`--title`）仍用人类可读文案，不必把日期写进标题。
+结果：
+
+- 目录：`2026-09-01-jijian-linmo/`（日期以导入当天为准）
+- 目录页主标题：`2026-09-01-jijian-linmo/`
+- description：`击剑临摹。给 7 岁孩子临摹的极简击剑线稿`
 
 脚本会：
 
 - 仓库不存在时创建公开仓库 `iambean/for-share`
 - 把静态文件拷到独立目录 `<YYYY-MM-DD>-<slug>/`（不覆盖其他包）
-- 若仓库里已有同名的无日期目录（例如先有 `jijian-linmo/`），导入日期版时删掉旧目录，避免两份并存
-- 把根路径资源改写成 `/for-share/<YYYY-MM-DD>-<slug>/...`，以便项目 Pages 子路径能打开
-- 更新根目录 `shares.json` 和目录页 `index.html`
+- 把仍无日期的旧目录改成同样的日期标题格式
+- 若仓库里已有同名的无日期目录（例如先有 `jijian-linmo/`），导入日期版时删掉旧目录
+- 把根路径资源改写成 `/for-share/<YYYY-MM-DD>-<slug>/...`
+- 更新根目录 `shares.json` 和目录页 `index.html`（h2 = 日期 slug/）
 - 写入 `.github/workflows/pages.yml` 并尝试开启 GitHub Pages
 - 打印页面链接
 
-导入成功后把链接发给用户。若 Pages 环境第一次部署需要在 GitHub 上确认 `github-pages` environment，提醒用户打开仓库 Settings → Pages，Source 选 **GitHub Actions**。
+导入成功后把**带日期的**链接发给用户。若 Pages 环境第一次部署需要在 GitHub 上确认 `github-pages` environment，提醒用户打开仓库 Settings → Pages，Source 选 **GitHub Actions**。
 
 ### `mode=list` — 查询现有页面
 
@@ -59,15 +69,17 @@ node "$SKILL_DIR/scripts/for-share.mjs" import \
 node "$SKILL_DIR/scripts/for-share.mjs" list
 ```
 
-把结果整理成列表发给用户，每条包含标题和完整 URL：
+每条先打日期标题 `YYYY-MM-DD-slug/`，再打完整 URL。
 
-`https://iambean.github.io/for-share/<YYYY-MM-DD>-<slug>/`
+### `mode=refresh`
 
-没有 token 时脚本会读公开的 `shares.json`。
+不导入新包，只把现有页面迁成日期 slug，并重写目录页标题：
+
+```bash
+node "$SKILL_DIR/scripts/for-share.mjs" refresh
+```
 
 ### `mode=enable-pages`
-
-只开启（或重新请求）GitHub Pages，不上传文件：
 
 ```bash
 node "$SKILL_DIR/scripts/for-share.mjs" enable-pages
@@ -76,6 +88,7 @@ node "$SKILL_DIR/scripts/for-share.mjs" enable-pages
 ## Rules
 
 - 一个静态包 = 仓库里的一个顶层目录，目录名是 `YYYY-MM-DD-slug`，不要再往下套一层日期文件夹。
+- 目录页主标题永远是 `YYYY-MM-DD-slug/`，不要用中文当 h2。
 - 不要删掉别人的 slug 目录，除非用户明确要求覆盖**同一个**页面（含把旧的无日期目录换成日期版）。
 - 默认 owner/repo 是 `iambean/for-share`。用户指定其他仓库时加 `--owner` `--repo`。
 - Token 不要写进仓库，不要在日志里打印 token。
@@ -93,8 +106,6 @@ PAT：https://github.com/settings/tokens/new?scopes=repo,workflow&description=fo
 
 ## Install (user-level, all agents)
 
-在本机执行 skill 目录里的安装脚本，会复制到 Cursor / Codex / Claude 的用户 skill 路径：
-
 ```bash
 bash github-for-share/install.sh
 ```
@@ -105,5 +116,3 @@ bash github-for-share/install.sh
 - `~/.agents/skills/github-for-share/`
 - `~/.codex/skills/github-for-share/`
 - `~/.claude/skills/github-for-share/`
-
-也可把整个 `github-for-share/` 文件夹放进 `iambean/my-skills` 后 `git push`，供 Codex 全局技能包使用。

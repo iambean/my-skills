@@ -16,6 +16,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -60,6 +61,69 @@ function datedSlug(raw) {
   const cleaned = sanitizeSlug(raw) || "share";
   if (DATE_SLUG_PREFIX.test(cleaned)) return cleaned;
   return `${todayStamp()}-${cleaned}`;
+}
+
+function headingFromSlug(slug) {
+  const clean = String(slug || "").replace(/\/+$/, "");
+  return `${clean}/`;
+}
+
+function rewriteExistingPrefix(dir, fromPrefix, toPrefix) {
+  const from = fromPrefix.endsWith("/") ? fromPrefix.slice(0, -1) : fromPrefix;
+  const to = toPrefix.endsWith("/") ? toPrefix.slice(0, -1) : toPrefix;
+  if (!from || from === to) return;
+  for (const file of walkFiles(dir)) {
+    if (!TEXT_EXT.has(path.extname(file).toLowerCase())) continue;
+    const text = readFileSync(file, "utf8");
+    const next = text.replaceAll(from, to);
+    if (next !== text) writeFileSync(file, next);
+  }
+}
+
+function foldHumanTitle(description, title, slug) {
+  const heading = headingFromSlug(slug);
+  const human = String(title || "").trim();
+  let desc = String(description || "").trim();
+  if (
+    human &&
+    human !== heading &&
+    human !== slug &&
+    !DATE_SLUG_PREFIX.test(sanitizeSlug(human)) &&
+    !desc.includes(human)
+  ) {
+    desc = desc ? `${human}。${desc}` : human;
+  }
+  return desc;
+}
+
+function migrateUndatedPages(root, repo, pages) {
+  const result = [];
+  for (const page of pages) {
+    const original = String(page.slug || "").replace(/\/+$/, "");
+    if (!original || SKIP_DIR_NAMES.has(original)) continue;
+    let slug = sanitizeSlug(original) || original;
+    if (!DATE_SLUG_PREFIX.test(slug)) {
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(page.updated || "")
+        ? page.updated
+        : todayStamp();
+      const newSlug = `${date}-${sanitizeSlug(original) || original}`;
+      const fromDir = path.join(root, original);
+      const toDir = path.join(root, newSlug);
+      if (existsSync(fromDir) && fromDir !== toDir) {
+        if (existsSync(toDir)) rmSync(toDir, { recursive: true, force: true });
+        renameSync(fromDir, toDir);
+        rewriteExistingPrefix(toDir, `/${repo}/${original}`, `/${repo}/${newSlug}`);
+      }
+      slug = newSlug;
+    }
+    result.push({
+      slug,
+      title: headingFromSlug(slug),
+      description: foldHumanTitle(page.description, page.title, slug),
+      updated: page.updated || todayStamp(),
+    });
+  }
+  return result;
 }
 
 function undatedSlug(slug) {
@@ -188,10 +252,11 @@ function catalogHtml(owner, repo, pages) {
   const cards = pages
     .map((page) => {
       const url = `${PAGES_HOST(owner, repo)}/${page.slug}/`;
+      const heading = headingFromSlug(page.slug);
+      const note = page.description || "";
       return `<a class="card" href="${url}">
-  <h2>${escapeHtml(page.title || page.slug)}</h2>
-  <p>${escapeHtml(page.description || "")}</p>
-  <span>${escapeHtml(page.slug)}/</span>
+  <h2>${escapeHtml(heading)}</h2>
+  ${note ? `<p>${escapeHtml(note)}</p>` : ""}
 </a>`;
     })
     .join("\n");
@@ -213,9 +278,8 @@ function catalogHtml(owner, repo, pages) {
     h1 { font-size: 2rem; letter-spacing: -0.03em; }
     .grid { display: grid; gap: 12px; }
     .card { display: block; padding: 16px 18px; background: #fffcf7; border-radius: 14px; text-decoration: none; color: inherit; box-shadow: 0 0 0 1px #00000012; }
-    .card h2 { margin: 0 0 6px; font-size: 1.05rem; }
-    .card p { margin: 0 0 8px; color: #6b6258; font-size: 0.92rem; }
-    .card span { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #8a7f74; }
+    .card h2 { margin: 0 0 6px; font-size: 1.05rem; font-family: ui-monospace, Menlo, monospace; letter-spacing: -0.02em; }
+    .card p { margin: 0; color: #6b6258; font-size: 0.92rem; }
     .empty { color: #6b6258; }
   </style>
 </head>
@@ -502,7 +566,8 @@ function printPages(owner, repo, pages) {
   }
   for (const page of pages) {
     const url = page.url || `${PAGES_HOST(owner, repo)}/${page.slug}/`;
-    console.log(`- ${page.title || page.slug}`);
+    console.log(`- ${headingFromSlug(page.slug)}`);
+    if (page.description) console.log(`  ${page.description}`);
     console.log(`  ${url}`);
   }
 }
@@ -586,9 +651,15 @@ async function cmdImport({ owner, repo, token, src, slug, title, description }) 
       });
     }
 
+    const shares = readShares(tmp);
+    const discovered = discoverPages(tmp);
+    let pages = shares.pages.length ? shares.pages : discovered;
+    pages = migrateUndatedPages(tmp, repo, pages);
+
     if (previousSlug && previousSlug !== packageSlug) {
       const oldDir = path.join(tmp, previousSlug);
       if (existsSync(oldDir)) rmSync(oldDir, { recursive: true, force: true });
+      pages = pages.filter((page) => page.slug !== previousSlug);
     }
 
     const destDir = path.join(tmp, packageSlug);
@@ -596,16 +667,10 @@ async function cmdImport({ owner, repo, token, src, slug, title, description }) 
     copyDir(src, destDir);
     rewriteAssetPrefix(destDir, `/${repo}/${packageSlug}`);
 
-    const shares = readShares(tmp);
-    const discovered = discoverPages(tmp);
-    let pages = shares.pages.length ? shares.pages : discovered;
-    if (previousSlug && previousSlug !== packageSlug) {
-      pages = pages.filter((page) => page.slug !== previousSlug);
-    }
     pages = upsertPage(pages, {
       slug: packageSlug,
-      title: title || packageSlug,
-      description: description || "",
+      title: headingFromSlug(packageSlug),
+      description: foldHumanTitle(description, title, packageSlug),
       updated: todayStamp(),
     });
     writeBootstrapFiles(tmp, owner, repo, pages);
@@ -628,6 +693,32 @@ async function cmdImport({ owner, repo, token, src, slug, title, description }) 
     const url = `${PAGES_HOST(owner, repo)}/${packageSlug}/`;
     console.log(`\n已导入 ${packageSlug}`);
     console.log(url);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+async function cmdRefresh({ owner, repo, token }) {
+  if (!token) throw new Error("缺少 GITHUB_TOKEN / GH_TOKEN，或未 gh auth login。");
+  await ensureRepo(token, owner, repo);
+  await ensurePublic(token, owner, repo);
+  const tmp = mkdtempSync(path.join(tmpdir(), "for-share-"));
+  try {
+    await cloneRepo(token, owner, repo, tmp);
+    const shares = readShares(tmp);
+    const discovered = discoverPages(tmp);
+    let pages = shares.pages.length ? shares.pages : discovered;
+    const seen = new Set(pages.map((page) => page.slug));
+    for (const extra of discovered) {
+      if (!seen.has(extra.slug)) pages.push(extra);
+    }
+    pages = migrateUndatedPages(tmp, repo, pages);
+    pages.sort((a, b) => a.slug.localeCompare(b.slug));
+    writeBootstrapFiles(tmp, owner, repo, pages);
+    runGit(["checkout", "-B", "main"], { cwd: tmp, env: gitEnv(token) });
+    commitAndPush(tmp, "Refresh for-share catalog titles and dated slugs", token, owner, repo);
+    console.log("\n目录已刷新");
+    printPages(owner, repo, pages);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -663,11 +754,15 @@ async function main() {
     });
     return;
   }
+  if (command === "refresh") {
+    await cmdRefresh(ctx);
+    return;
+  }
   if (command === "enable-pages") {
     await cmdEnablePages(ctx);
     return;
   }
-  console.error("用法: for-share.mjs <import|list|enable-pages> [--src DIR] [--slug NAME]");
+  console.error("用法: for-share.mjs <import|list|refresh|enable-pages> [--src DIR] [--slug NAME]");
   process.exit(1);
 }
 
@@ -679,4 +774,4 @@ if (isMain) {
   });
 }
 
-export { catalogHtml, datedSlug, rewriteAssetPrefix };
+export { catalogHtml, datedSlug, headingFromSlug, rewriteAssetPrefix };
